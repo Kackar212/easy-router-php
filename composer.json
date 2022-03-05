@@ -1,0 +1,11 @@
+{
+    "name": "qob/easy-router",
+    "description": "Easy to use CMS",
+    "type": "project",
+    "autoload": {
+        "psr-4": {
+            "EasyRouter\\": "src/"
+        }
+    },
+    "require": {}
+}
