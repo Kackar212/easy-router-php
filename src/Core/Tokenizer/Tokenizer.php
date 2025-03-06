@@ -2,16 +2,19 @@
 
 namespace EasyRouter\Core\Tokenizer;
 
-class Tokenizer {
+class Tokenizer
+{
     private Cursor $cursor;
     private ?object $token = null;
     private array $tokens = [];
     private int $count = 0;
-    public function __construct(Cursor $cursor) {
+    public function __construct(Cursor $cursor)
+    {
         $this->cursor = $cursor;
     }
 
-    public function tokenize(string $content): array {
+    public function tokenize(string $content): array
+    {
         $this->tokens = [];
         $this->cursor->init($content);
 
@@ -28,11 +31,12 @@ class Tokenizer {
         return $this->tokens;
     }
 
-    public function consumeParameter() {
+    public function consumeParameter()
+    {
         $isOptional = $this->cursor->tryAdvancePosition(Chars::QUESTION_MARK);
         $cursorStart = $this->cursor->copy();
 
-        $this->cursor->advanceUntil(function (int $char) use ($isOptional, $cursorStart)  {
+        $this->cursor->advanceUntil(function (int $char) use ($isOptional, $cursorStart) {
             if ($this->cursor->tryAdvancePosition(Chars::LESS_THAN)) {
                 $regexpStart = $this->cursor->copy();
                 $regexp = $this->consumeRegexp($regexpStart);
@@ -48,20 +52,18 @@ class Tokenizer {
             return $char !== Chars::CURLY_RIGHT;
         });
 
-        
+
         $parameter = $this->cursor->getRange($cursorStart);
-        
+
         $this->cursor->advance();
-        
+
         $this->tokens[] = $this->token ?? (object) ["value" => $parameter, "type" => Token::PARAMETER, "isOptional" => $isOptional, "regexp" => ""];
         $this->token = null;
     }
 
-    public function consumeRegexp(Cursor $cursorStart) {
+    public function consumeRegexp(Cursor $cursorStart)
+    {
         $this->cursor->advance();
-
-        // < xd \> >
-        // char === \ && 
 
         $this->count = 0;
         $this->cursor->advanceUntil(function (int $char) {
@@ -75,16 +77,14 @@ class Tokenizer {
                 $this->count--;
             }
 
-            // if ($char === Chars::BACKSLASH && $this->cursor->tryAdvancePosition(Chars::GREATER_THAN)) {
-            //     return true;
-            // }
             return $result;
         });
 
         return $this->cursor->getRange($cursorStart);
     }
 
-    public function consumeStaticData() {
+    public function consumeStaticData()
+    {
         $cursorStart = $this->cursor->copy();
 
         $this->cursor->advanceUntil(function (int $char) {

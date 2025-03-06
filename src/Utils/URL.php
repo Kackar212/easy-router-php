@@ -12,7 +12,6 @@ class URL
   {
     $this->current = $this->current();
     $this->parsedURL = parse_url($this->current);
-    // $this->query = isset($this->parsedURL['query']) ? $this->parseQuery() : [];
   }
 
   private function parseQuery()
@@ -22,13 +21,14 @@ class URL
     return $params;
   }
 
-  private function hasValue(string $param) {
+  private function hasValue(string $param)
+  {
     return str_contains($param, '=');
   }
 
   function query($asObject = true)
   {
-    return $asObject ? (object)$this->query : $this->query;
+    return $asObject ? (object) $this->query : $this->query;
   }
 
   function parseParams(string $query): array
@@ -91,7 +91,8 @@ class URL
     return rawurlencode(str_starts_with($path, '/') ? substr($path, 1) : $path);
   }
 
-  function pathDecoded(): string {
+  function pathDecoded(): string
+  {
     return rawurldecode($this->path());
   }
 
@@ -105,9 +106,11 @@ class URL
     return $_SERVER['REQUEST_URI'];
   }
 
-  function trimSegments(array $segments): array {
+  function trimSegments(array $segments): array
+  {
     foreach ($segments as $index => $segment) {
-      if (!$segment) unset($segments[$index]);
+      if (!$segment)
+        unset($segments[$index]);
     }
 
     return array_values($segments);
