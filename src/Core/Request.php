@@ -5,21 +5,20 @@ namespace EasyRouter\Core;
 use ArrayIterator;
 use Closure;
 use EasyRouter\Core\Facades\ArrayList;
-use EasyRouter\Core\Facades\URL;
 use IteratorAggregate;
 
 class Request implements IteratorAggregate
 {
-  private array $request;
+  private object $request;
   private array $headers;
   private array $routeParams = [];
   private array $queryParams = [];
 
   function __construct()
   {
-    $this->queryParams = URL::query(false);
-    $this->request = $this->getRequest();
+    $this->queryParams = $_GET;
     $this->headers = $this->getHeaders();
+    $this->request = $this->getRequest();
   }
 
   function getIterator(): ArrayIterator
@@ -29,7 +28,15 @@ class Request implements IteratorAggregate
 
   private function getRequest()
   {
-    return [];
+    $contentType = $this->headers["content-type"] ?? '';
+
+    if (str_contains($contentType,"application/json")) {
+      $requestJSON = file_get_contents("php://input");
+
+      return json_decode($requestJSON);
+    }
+
+    return (object) $_REQUEST;
   }
 
   protected function filterHeaderName($headerName) {
@@ -111,6 +118,11 @@ class Request implements IteratorAggregate
 
   function get(string $key = null)
   {
+    if ($key !== null && isset($this->request->{$key})) {
+      return $this->request->{$key};
+    }
+
+    return $this->request;
   }
 
   function queryParams(string $key = null): string|array|null

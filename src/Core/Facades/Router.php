@@ -11,8 +11,6 @@ class Router
   use Facade;
   
   protected static function getInstance() {
-    $args = [DI::resolve(Routes::class), DI::resolve(Request::class)];
-    
-    self::$instance = new RouterService(...$args);
+    self::$instance = DI::resolve(RouterService::class);
   }
 }

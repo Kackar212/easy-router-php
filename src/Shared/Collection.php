@@ -5,7 +5,12 @@ namespace EasyRouter\Shared;
 use ArrayIterator;
 use EasyRouter\Core\Facades\DI;
 
-trait Collection {
+interface ICollection
+{
+}
+
+trait Collection
+{
   private array $storage;
 
   function getIterator(): ArrayIterator
@@ -13,7 +18,8 @@ trait Collection {
     return new ArrayIterator($this->storage);
   }
 
-  function deep(array $storage, array $args) {
+  function deep(array $storage, array $args)
+  {
     foreach ($storage as $index => $value) {
       if (is_array($value)) {
         $storage[$index] = $this->deep($value, $args);
@@ -23,11 +29,13 @@ trait Collection {
     return DI::resolve($this::class, array_merge($args, ["storage" => $storage]));
   }
 
-  function length() {
+  function length()
+  {
     return count($this->storage);
   }
 
-  function getLastIndex(): int {
+  function getLastIndex(): int
+  {
     $length = $this->length();
     return $length ? $length - 1 : $length;
   }
@@ -54,7 +62,8 @@ trait Collection {
     return $this->storage[$index];
   }
 
-  function find(callable $callback) {
+  function find(callable $callback)
+  {
     foreach ($this->storage as $value) {
       if (call_user_func($callback, $value)) {
         return $value;
@@ -78,10 +87,13 @@ trait Collection {
     $this->storage[$key] = $value;
   }
 
-  function &offsetGet($offset) {
+  function &offsetGet($offset): mixed
+  {
     if ($this->offsetExists($offset)) {
       return $this->storage[$offset];
     }
+
+    return NULL;
   }
 
   function offsetUnset(mixed $offset): void
@@ -91,7 +103,8 @@ trait Collection {
     }
   }
 
-  function getKeys(array|object $objectOrArray = null): self {
+  function getKeys(array|object $objectOrArray = null): self
+  {
     $result = [];
 
     if (!$objectOrArray) {
@@ -105,7 +118,8 @@ trait Collection {
     return $this->create($result);
   }
 
-  function getValues(array|object $objectOrArray = null): self {
+  function getValues(array|object $objectOrArray = null): self
+  {
     $result = [];
 
     if (!$objectOrArray) {
@@ -119,7 +133,8 @@ trait Collection {
     return $this->create($result);
   }
 
-  function filter(callable $callback, int $mode = 0): self {
+  function filter(callable $callback, int $mode = 0): self
+  {
     $storage = $this->toArray();
 
     $result = array_filter($storage, $callback, $mode);
@@ -127,19 +142,21 @@ trait Collection {
     return $this->create($result);
   }
 
-  function isEmpty() {
+  function isEmpty()
+  {
     return empty($this->storage);
   }
 
-  function map(callable $callback, array ...$arrays) {
+  function map(callable $callback, array ...$arrays)
+  {
     $result = array_map($callback, $this->toArray(), ...$arrays);
-    
+
     return $this->create($result);
   }
 
-  function fromEntries(array|Collection $entries = null) {
-    $entries = $entries ?? $this->toArray();
-    if ($entries instanceof Collection) {
+  function fromEntries(array|Collection $entries = null)
+  {
+    if (!is_array($entries) && method_exists($entries, 'toArray')) {
       $entries = $entries->toArray();
     }
 
@@ -152,15 +169,18 @@ trait Collection {
     return (object) $result;
   }
 
-  function toArray(): array {
+  function toArray(): array
+  {
     return $this->storage;
   }
 
-  function toObject(): object {
+  function toObject(): object
+  {
     return (object) $this->storage;
   }
 
-  function create(array $storage = null): self {
+  function create(array $storage = null): self
+  {
     return DI::resolve($this::class, array_merge(get_object_vars($this), ["storage" => $storage ?? $this->storage]));
   }
 }

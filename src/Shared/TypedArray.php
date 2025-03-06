@@ -33,7 +33,8 @@ class TypedArray implements ArrayAccess, IteratorAggregate
 
   private function checkType($value)
   {
-    if ($this->type === 'all') return true;
+    if ($this->type === 'all')
+      return true;
 
     $valueType = null;
     if (is_object($value) && $this->type !== 'object') {
@@ -56,7 +57,8 @@ class TypedArray implements ArrayAccess, IteratorAggregate
     $this->set($key, $value);
   }
 
-  function getDeep() {
+  function getDeep()
+  {
     return $this->deep($this->storage, ["type" => $this->type]);
   }
 }

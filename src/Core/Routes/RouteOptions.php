@@ -4,7 +4,7 @@ namespace EasyRouter\Core\Routes;
 
 class RouteOptions {
   private static $defaultOptions = [
-    "method" => "GET",
+    "method" => ["GET"],
   ];
 
   static function merge(array $options) {

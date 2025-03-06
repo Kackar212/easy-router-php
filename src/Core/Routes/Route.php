@@ -2,32 +2,48 @@
 
 namespace EasyRouter\Core\Routes;
 
+use EasyRouter\Core\Facades\URL as FacadesURL;
 use EasyRouter\Core\Request;
+use EasyRouter\Core\Tokenizer\Token;
+use EasyRouter\Core\Tokenizer\Tokenizer;
 use EasyRouter\Utils\URL;
 
 class Route extends RoutePath
 {
   public object $options;
-  private $component;
 
-  function __construct(URL $url, Request $request, string $path, $component, array $options = [])
+  private $component;
+  private array $matchResult = [];
+
+  private Request $request;
+  protected Tokenizer $tokenizer;
+
+  function __construct(URL $url, Request $request, Tokenizer $tokenizer, string $path, $component, array $options = [])
   {
-    parent::__construct($url, $path);
+    parent::__construct($url, $tokenizer, $path);
+
     $this->request = $request;
     $this->options = RouteOptions::merge($options);
     $this->component = $component;
+    $this->tokenizer = $tokenizer;
   }
 
-  private function getParamsValues($urlPathSegments): array {
+  private function isMatch()
+  {
+    return count($this->matchResult) > 0;
+  }
+
+  private function getParamsValues($urlPathSegments): array
+  {
     $params = [];
 
     foreach ($urlPathSegments as $index => $urlPathSegment) {
       $copy = $this->routeSegmentsWithoutParameters[$index] ?? [];
 
       foreach ($copy as $routeSegmentIndex => $segment) {
-        
+
         $paramsFromUrlSegment = explode($segment, $urlPathSegment);
-        
+
         if ($segment === $urlPathSegment) {
           $paramsFromUrlSegment = [];
         }
@@ -37,13 +53,14 @@ class Route extends RoutePath
         }
 
         $hasPathSegment = array_search($urlPathSegment, $paramsFromUrlSegment);
-        
+
         if ($hasPathSegment === false) {
           $params = [...$params, ...$paramsFromUrlSegment];
         }
       }
 
-      if (empty($copy)) $params[] = $urlPathSegment;
+      if (empty($copy))
+        $params[] = $urlPathSegment;
     }
 
 
@@ -61,7 +78,8 @@ class Route extends RoutePath
     return $params;
   }
 
-  function isMethodAllowed(string $method): bool {
+  function isMethodAllowed(string $method): bool
+  {
     return $this->options->method === $method;
   }
 
@@ -70,47 +88,34 @@ class Route extends RoutePath
     return $this->component;
   }
 
-  function getParameters() {
-    return $this->parameters;
+  function getParameters()
+  {
+    if (!$this->isMatch())
+      return [];
+
+    $parameters = array_filter($this->tokens, function ($token) {
+      return $token->type === Token::PARAMETER;
+    });
+
+    return array_reduce($parameters, function ($result, $token) {
+      $result[$token->value] = $this->matchResult[$token->value];
+
+      return $result;
+    }, []);
   }
+
 
   function matchPath(string $path): bool
   {
-    if ($this->path === $path) return true;
-
-    $path = str_ends_with($path, '/') ? substr($path, 0, strlen($path) - 1) : $path;
-
-    $urlPathSegments = $this->url->getSegments($path);
-
-    $params = $this->getParamsValues($urlPathSegments);
-
-    if (count($this->parameters) !== count($params)) {
-      return false;
+    if ($this->path === "*") {
+      return true;
     }
 
-    $this->parameters = array_combine($this->parameters, $params);
+    $routeRegexp = $this->getRouteRegexp();
 
-    foreach ($this->parameters as $parameterName => $parameter) {
-      $regex = $this->parametersWithExpression[$parameterName] ?? '(.+)';
+    preg_match("/^{$routeRegexp}$/", $path, $this->matchResult);
 
-      $isOptional = str_starts_with($parameterName, '?');
-
-      if ($isOptional) {
-        $this->parameters[substr($parameterName, 1)] = $parameter;
-      }
-
-      if ($parameter === "" && $isOptional) {
-        continue;
-      }
-
-      preg_match("/{$regex}/", $parameter, $match);
-
-      if (!isset($match[0]) || $parameter !== $match[0]) {
-        return false;
-      }
-    }
-
-    return true;
+    return $this->isMatch();
   }
 
   function isPathEmpty()

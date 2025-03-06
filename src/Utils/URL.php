@@ -12,7 +12,7 @@ class URL
   {
     $this->current = $this->current();
     $this->parsedURL = parse_url($this->current);
-    $this->query = isset($this->parsedURL['query']) ? $this->parseQuery() : [];
+    // $this->query = isset($this->parsedURL['query']) ? $this->parseQuery() : [];
   }
 
   private function parseQuery()
@@ -48,9 +48,9 @@ class URL
     return $parsedParams;
   }
 
-  function createQuery(array $query)
+  function createQuery(array $query = null)
   {
-    http_build_query($this->query);
+    http_build_query($query ?? $this->query);
   }
 
   function removeParams(string ...$params)
@@ -68,7 +68,7 @@ class URL
   function hasParams(string ...$params): bool
   {
     if (count($params) === 1) {
-      return isset($this->query[$params]);
+      return isset($this->query[$params[0]]);
     }
 
     foreach ($params as $param) {
@@ -82,13 +82,17 @@ class URL
 
   function path(): string
   {
-    $path = str_replace($this->root(), '', $this->parsedURL['path']);
+    $path = $this->parsedURL['path'];
 
     if ($path === '/') {
       return $path;
     }
 
-    return str_starts_with($path, '/') ? substr($path, 1) : $path;
+    return rawurlencode(str_starts_with($path, '/') ? substr($path, 1) : $path);
+  }
+
+  function pathDecoded(): string {
+    return rawurldecode($this->path());
   }
 
   function fragment(): string
@@ -112,19 +116,6 @@ class URL
   function getSegments($path = null, $clearWhitespaces = true): array
   {
     $segments = explode('/', $path ?? $this->path());
-
     return $segments;
-  }
-
-  function root(): string
-  {
-    $path = $_SERVER['PHP_SELF'];
-    $segments = $this->getSegments($path, false);
-
-    $rootSegments = array_filter($segments, function ($segment) {
-      return $segment !== 'public' && $segment !== 'index.php';
-    });
-
-    return implode('/', $rootSegments);
   }
 }

@@ -6,48 +6,22 @@ use Closure;
 use EasyRouter\Core\DI\Error\CircularDependencyError;
 use EasyRouter\Core\DI\Error\NotInstantiableError;
 use EasyRouter\Core\DI\Error\PrimitiveTypeError;
-use EasyRouter\Shared\TypedArray;
+use Reflection;
 use ReflectionClass;
-use ReflectionFunction;
-use ReflectionFunctionAbstract;
 use ReflectionParameter;
 
 class Container
 {
-  private array $with = [];
-  private array $instances = [];
-  private array $resolved = [];
+  private array $buildStack = [];
   private array $resolveWith = [];
-  private ?string $functionName = null;
+  private array $instances = [];
 
-  function __construct(array $with = [], array $instances = [])
+  private function isPrimitive(ReflectionParameter $parameter)
   {
-    $this->with = $with;
-    $this->instances = $instances;
-    $this->buildStack = [];
+    return $parameter->hasType() && $parameter->getType()->isBuiltin() || !$parameter->hasType();
   }
 
-  private function hasDependencies(?ReflectionFunctionAbstract $reflection): bool
-  {
-    if (!$reflection) return false;
-
-    $parameters = $reflection->getParameters();
-
-    return !!count($parameters);
-  }
-
-  private function isInstantiable(ReflectionClass $reflection): bool
-  {
-    $abstract = $reflection->getName();
-
-    if (!$reflection->isInstantiable()) {
-      throw new NotInstantiableError($abstract);
-    }
-
-    return true;
-  }
-
-  private function getClass(ReflectionParameter $parameter)
+  private function getParameterClass(ReflectionParameter $parameter)
   {
     $hasType = $parameter->hasType();
 
@@ -64,16 +38,21 @@ class Container
     return false;
   }
 
-  private function resolvePrimitive(ReflectionParameter $parameter, ?ReflectionClass $reflection)
+  private function resolvePrimitive(ReflectionParameter $parameter, ReflectionClass|string $reflection = null)
   {
-    if ($reflection || $this->functionName) {
-      $name = $this->functionName ? $this->functionName : $reflection->getName();
-      $staticParameters =  &$this->resolveWith[$name] ?? false;
+    $parameterName = $parameter->getName();
+    $name = is_string($reflection) ? $reflection : $reflection->getName();
 
-      $parameterName = $parameter->getName();
-      if ($staticParameters && isset($staticParameters[$parameterName])) {
-        return $staticParameters[$parameterName];
+    if (array_key_exists($parameterName, $this->resolveWith[$name])) {
+      $value = $this->resolveWith[$name][$parameterName];
+
+      unset($this->resolveWith[$name][$parameterName]);
+
+      if (count($this->resolveWith[$name]) === 0) {
+        unset($this->resolveWith[$name]);
       }
+
+      return $value;
     }
 
     if ($parameter->isOptional()) {
@@ -81,121 +60,111 @@ class Container
     }
 
     $class = array_pop($this->buildStack);
-    $class = $class ?? $reflection ? $reflection->getName() : '';
+    if ($reflection instanceof ReflectionClass) {
+      $class = $class ?? $reflection ? $reflection->getName() : '';
+    }
 
     throw new PrimitiveTypeError($class, $parameter->getDeclaringFunction()->getName(), $parameter);
   }
 
-  private function resolveClass($class, $method)
+  public function resolve(Closure|string|array $abstract, array $with = [], array $resolved = [])
   {
-    $resolvedClass = $this->resolve($class);
+    $serializedAbstract = is_array($abstract) ? json_encode($abstract) : $abstract;
 
-    array_pop($this->buildStack);
+    if (is_callable($abstract)) {
+      $tempName = "function_" . random_bytes(16);
+      $this->resolveWith[$tempName] = $with;
 
-    return $resolvedClass;
+      $reflectionFunction = new \ReflectionFunction($abstract);
+
+      $resolved = $this->getArgs($reflectionFunction->getParameters(), $with, $tempName);
+
+      return $reflectionFunction->invokeArgs($resolved);
+    }
+
+    $this->resolveWith[$serializedAbstract] = $with;
+
+    if (!is_callable($abstract) && is_array($abstract)) {
+
+      [$instance, $method] = $abstract;
+
+
+      $reflectionMethd = new \ReflectionMethod($instance, $method);
+      $resolvedInstance = $this->resolve($instance);
+      $args = $this->getArgs($reflectionMethd->getParameters(), $with, json_encode($abstract));
+
+      return $resolvedInstance->{$method}(...$args);
+    }
+
+    if (is_callable($abstract) && is_array($abstract)) {
+      [$instance, $method] = $abstract;
+
+      $reflectionMethd = new \ReflectionMethod($instance, $method);
+      $args = $this->getArgs($reflectionMethd->getParameters(), $with, json_encode($abstract));
+
+      return $instance->{$method}(...$args);
+    }
+
+    $reflection = new ReflectionClass($abstract);
+    $constructor = $reflection->getConstructor();
+
+    if (!$reflection->isInstantiable()) {
+      throw new NotInstantiableError($reflection->getName());
+    }
+
+    $parameters = $constructor ? $constructor->getParameters() : [];
+    $hasDependencies = count($parameters) > 0;
+
+    if (!$hasDependencies) {
+      return $reflection->newInstance();
+    }
+
+    $resolved = $this->getArgs($parameters, $with, $reflection);
+
+    return $reflection->newInstanceArgs($resolved);
   }
 
-  private function getArgs(ReflectionFunctionAbstract $method, ?ReflectionClass $classReflection = null)
+  public function getArgs(array $parameters, array $with, ReflectionClass|string $reflection = null)
   {
-    $parameters = $method->getParameters();
-    $resolvedParameters = [];
+    $resolved = [];
 
     foreach ($parameters as $parameter) {
-      $class = $this->getClass($parameter);
+      if ($this->isPrimitive($parameter)) {
+        $resolved[] = $this->resolvePrimitive($parameter, $reflection);
 
-      if (!$class) {
-        $resolvedParameters[] = $this->resolvePrimitive($parameter, $classReflection);
         continue;
       }
 
-      if (array_search($class, $this->buildStack)) {
-        throw new CircularDependencyError($class, $method->getName(), $parameter);
+      $parameterClass = $this->getParameterClass($parameter);
+
+      if ($parameter->isOptional()) {
+        $resolved[] = $parameter->getDefaultValue();
+
+        continue;
       }
 
-      $this->buildStack[] = $class;
-      $resolvedParameters[] = $this->resolveClass($class, $method);
-    }
-
-    return $resolvedParameters;
-  }
-
-  function resolve(Closure|string $abstract, array $with = null)
-  {
-    $reflection = new ReflectionClass($abstract);
-    $args = [];
-
-    if ($this->isInstantiable($reflection)) {
-      if (!isset($this->resolved[$abstract])) {
-        $this->resolved[$abstract] = new TypedArray(\object::class);
+      if (in_array($parameterClass, $this->buildStack)) {
+        throw new CircularDependencyError($parameterClass, "", $parameter);
       }
 
-      if (isset($this->instances[$abstract])) {
-        return $this->instances[$abstract];
+      $this->buildStack[] = $parameterClass;
+
+      if (isset($this->instances[$parameterClass])) {
+        $resolved[] = $this->instances[$parameterClass];
+
+        continue;
       }
 
-      $this->resolveWith[$abstract] = $with ?? $this->with[$abstract] ?? [];
-      $this->buildStack[] = $abstract;
-
-      $constructor = $reflection->getConstructor();
-      if ($this->hasDependencies($constructor)) {
-        $args = $this->getArgs($constructor, $reflection);
-      }
+      $resolved[] = $this->resolve($parameterClass, $with, $resolved);
 
       array_pop($this->buildStack);
-      return $this->resolved[$abstract][] = $reflection->newInstanceArgs($args);
-    }
-  }
-
-  function call(object $instance, string $method, array $with = null)
-  {
-    $reflection = new ReflectionClass($instance);
-    $args = [];
-
-    $this->functionName = $method;
-    $this->resolveWith[$this->functionName] = $with;
-
-    $reflectionMethod = $reflection->getMethod($method);
-
-    if ($this->hasDependencies($reflectionMethod)) {
-      $args = $this->getArgs($reflectionMethod, $reflection);
     }
 
-    $this->functionName = null;
-    return $instance->{$method}(...$args);
+    return $resolved;
   }
 
-  function callFunction(Closure|string $func, array $with = [])
-  {
-    $function = new ReflectionFunction($func);
-    $args = [];
-
-    $this->functionName = $function->getName() . random_bytes(10);
-    $this->resolveWith[$this->functionName] = $with;
-
-    if ($this->hasDependencies($function)) {
-      $args = $this->getArgs($function);
-    }
-
-    $this->functionName = null;
-    return $function->invokeArgs($args);
-  }
-
-  function with(array $with): Container
-  {
-    $this->with = array_merge($this->with, $with);
-
-    return $this;
-  }
-
-  function instances(array $instances): Container
+  public function instances(array $instances)
   {
     $this->instances = array_merge($this->instances, $instances);
-
-    return $this;
-  }
-
-  function get(string $className): TypedArray
-  {
-    return $this->resolved[$className];
   }
 }
